@@ -7,7 +7,7 @@ import (
 
 var _default *Logger = nil
 
-func _initLogger() error {
+func InitLogger() error {
 	log, err := MakeConsoleLogger(nil)
 
 	if err != nil {
