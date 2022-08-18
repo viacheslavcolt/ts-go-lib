@@ -5,6 +5,20 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var _default *Logger = nil
+
+func _initLogger() error {
+	log, err := MakeConsoleLogger(nil)
+
+	if err != nil {
+		return err
+	}
+
+	_default = log
+
+	return nil
+}
+
 type Logger struct {
 	_logger *zap.Logger
 }
@@ -32,4 +46,36 @@ func (l *Logger) Fatal(title string, err string, fields ...zapcore.Field) {
 	}
 
 	l._logger.Fatal(title, fields...)
+}
+
+func Info(msg string, fields ...zapcore.Field) {
+	if _default == nil {
+		return
+	}
+
+	_default.Info(msg, fields...)
+}
+
+func Warn(msg string, fields ...zapcore.Field) {
+	if _default == nil {
+		return
+	}
+
+	_default.Warn(msg, fields...)
+}
+
+func Error(title string, err string, fields ...zapcore.Field) {
+	if _default == nil {
+		return
+	}
+
+	_default.Error(title, err, fields...)
+}
+
+func Fatal(title string, err string, fields ...zapcore.Field) {
+	if _default == nil {
+		return
+	}
+
+	_default.Fatal(title, err, fields...)
 }

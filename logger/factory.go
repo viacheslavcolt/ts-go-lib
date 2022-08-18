@@ -71,10 +71,14 @@ func _makeLogger(isDev bool, level zapcore.Level, encoderType string, outPaths [
 }
 
 // api of this module
-func MakeProdLogger(outPaths []string) (*Logger, error) {
+func MakeJsonLogger(outPaths []string) (*Logger, error) {
 	return _makeLogger(false, _InfoLevel, _JsonEncoderType, outPaths)
 }
 
 func MakeDevLogger(outPaths []string) (*Logger, error) {
 	return _makeLogger(true, _DebugLevel, _ConsoleEncoderType, outPaths)
+}
+
+func MakeConsoleLogger(outPaths []string) (*Logger, error) {
+	return _makeLogger(false, _InfoLevel, _ConsoleEncoderType, outPaths)
 }
