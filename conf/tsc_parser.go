@@ -1,35 +1,29 @@
-package tsc
+package conf
 
 import (
 	"fmt"
+	"strconv"
 )
 
-func Parse(filePath string) (*TscObj, error) {
+func _TscParse(buf *_Buffer) (*_TscObj, error) {
 	var (
-		root *TscObj
-		buf  _Buffer
+		root *_TscObj
 		err  error
 	)
 
-	_InitBuffer(&buf)
-
-	if err = buf._Load(filePath); err != nil {
-		return nil, err
-	}
-
 	root = _NewTscObj()
 
-	if err = parseNamespace(root, &buf, true); err != nil {
+	if err = parseNamespace(root, buf, true); err != nil {
 		return nil, err
 	}
 
 	return root, nil
 }
 
-func parseNamespace(obj *TscObj, buf *_Buffer, isRoot bool) error {
+func parseNamespace(obj *_TscObj, buf *_Buffer, isRoot bool) error {
 	var (
-		newObj        *TscObj
-		nextPtr       **TscObj
+		newObj        *_TscObj
+		nextPtr       **_TscObj
 		isReachingEnd bool
 		err           error
 	)
@@ -44,7 +38,7 @@ func parseNamespace(obj *TscObj, buf *_Buffer, isRoot bool) error {
 		buf._AdvanceAt(1)
 	}
 
-	obj.T = ObjNamespaceT
+	obj.T = _ObjNamespaceT
 
 	nextPtr = &obj.Child
 
@@ -67,7 +61,6 @@ func parseNamespace(obj *TscObj, buf *_Buffer, isRoot bool) error {
 			return err
 		}
 
-		//fmt.Println(newObj)
 		buf._SkipWhiteSpace()
 
 		if !buf._CanAccessAtIndex(0) {
@@ -104,7 +97,6 @@ func parseNamespace(obj *TscObj, buf *_Buffer, isRoot bool) error {
 			return fmt.Errorf("unexpected char %c on the position %d", buf._AtIndex(0), buf._GetOffset())
 		}
 
-		// set pointers for valid struct of parsed data
 		newObj.Root = obj
 		*nextPtr = newObj
 		nextPtr = &(*nextPtr).Next
@@ -117,14 +109,7 @@ func parseNamespace(obj *TscObj, buf *_Buffer, isRoot bool) error {
 	return nil
 }
 
-/*
-
-{
-	=f
-}
-
-*/
-func parsekey(obj *TscObj, buf *_Buffer) error {
+func parsekey(obj *_TscObj, buf *_Buffer) error {
 	var (
 		startIndex    int
 		endIndex      int
@@ -138,7 +123,7 @@ func parsekey(obj *TscObj, buf *_Buffer) error {
 	endIndex = startIndex
 
 	for ; buf._CanAccessAtIndex(uint(endIndex)); endIndex++ {
-		if !_isAvailableForKey(buf._AtIndex(uint(endIndex))) {
+		if !isKeyCharacter(buf._AtIndex(uint(endIndex))) {
 			isInterrapted = true
 			break
 		}
@@ -163,7 +148,7 @@ func parsekey(obj *TscObj, buf *_Buffer) error {
 	return fmt.Errorf("unexpected end")
 }
 
-func parseVal(obj *TscObj, buf *_Buffer) error {
+func parseVal(obj *_TscObj, buf *_Buffer) error {
 	if !buf._CanAccessAtIndex(0) {
 		return fmt.Errorf("expected start value of key %s on the position %d", string(obj.Key), buf._GetOffset())
 	}
@@ -171,7 +156,7 @@ func parseVal(obj *TscObj, buf *_Buffer) error {
 	if buf._CanRead(4) && buf._CmpStringAtIndex(0, []byte("true")) {
 		buf._AdvanceAt(4)
 
-		obj.T = ObjBoolT
+		obj.T = _ObjBoolT
 		obj.Bool = true
 
 		return nil
@@ -180,7 +165,7 @@ func parseVal(obj *TscObj, buf *_Buffer) error {
 	if buf._CanRead(5) && buf._CmpStringAtIndex(0, []byte("false")) {
 		buf._AdvanceAt(5)
 
-		obj.T = ObjBoolT
+		obj.T = _ObjBoolT
 		obj.Bool = false
 
 		return nil
@@ -190,49 +175,136 @@ func parseVal(obj *TscObj, buf *_Buffer) error {
 		return parseStringVal(obj, buf)
 	}
 
-	if buf._CmpCharAtIndex(0, '-') || _isNumber(buf._AtIndex(0)) {
-
+	if buf._CmpCharAtIndex(0, '-') || isANumber(buf._AtIndex(0)) {
+		return parseNumberVal(obj, buf)
 	}
 
-	return nil
+	return fmt.Errorf("unexpected character with code %d at position %d", buf._AtIndex(0), buf._GetOffset())
 }
 
-func parseStringVal(obj *TscObj, buf *_Buffer) error {
+func parseStringVal(obj *_TscObj, buf *_Buffer) error {
+	if !buf._CanAccessAtIndex(0) {
+		return fmt.Errorf("expected \" on the position %d", buf)
+	}
+
 	if !buf._CmpCharAtIndex(0, '"') {
-		return fmt.Errorf("expected start of string with \" character, on the position %d", buf._GetOffset())
+		return fmt.Errorf("unexpected %s at position %d", string(buf._AtIndex(0)), buf._GetOffset())
 	}
 
 	buf._AdvanceAt(1)
 
+	var (
+		i int
+
+		allocStr     []byte
+		skippedBytes int
+	)
+
+	skippedBytes = 0
+
+	for i = 0; buf._CanAccessAtIndex(uint(i)) && buf._AtIndex(uint(i)) != '"' && buf._AtIndex(uint(i)) > 32; i++ {
+		if buf._AtIndex(uint(i)) == '\\' {
+			skippedBytes++
+			i++
+		}
+	}
+
+	if !(buf._CanAccessAtIndex(uint(i)) && buf._AtIndex(uint(i)) == '"') {
+		return fmt.Errorf("string ended unexpectedly, unexpected character %d, start of string at position %d", buf._AtIndex(uint(i)), buf._GetOffset())
+	}
+
+	allocStr = make([]byte, i-skippedBytes)
+
+	var (
+		aIndex int
+		mIndex int
+	)
+
+	mIndex = 0
+
+	// copy
+	for aIndex = 0; mIndex < i; aIndex++ {
+		if buf._AtIndex(uint(mIndex)) != '\\' {
+			allocStr[aIndex] = buf._AtIndex(uint(mIndex))
+			mIndex++
+		} else {
+			mIndex++
+
+			switch buf._AtIndex(uint(mIndex)) {
+			case 'n':
+				allocStr[aIndex] = '\n'
+				break
+			case 't':
+				allocStr[aIndex] = '\t'
+				break
+			case 'r':
+				allocStr[aIndex] = '\r'
+				break
+			case 'b':
+				allocStr[aIndex] = '\b'
+				break
+			case '"':
+			case '\\':
+				allocStr[aIndex] = buf._AtIndex(uint(mIndex))
+				break
+			default:
+				return fmt.Errorf("unreachable escaped char %s", string(buf._AtIndex(uint(mIndex))))
+			}
+
+			mIndex++
+		}
+	}
+
+	obj.T = _ObjStringT
+	obj.StrVal = allocStr
+
+	buf._AdvanceAt(uint(i + 1))
+
 	return nil
-	// var (
-	// 	startIndex int
-	// 	endIndex   int
+}
 
-	// 	allocSize int
-	// )
+func parseNumberVal(obj *_TscObj, buf *_Buffer) error {
+	if !buf._CanAccessAtIndex(0) {
+		return fmt.Errorf("")
+	}
 
-	// startIndex = 0
-	// endIndex = startIndex
+	var (
+		i int
 
-	// for ; buf._CanAccessAtIndex(uint(endIndex)) && buf._AtIndex(uint(endIndex)) != '"'; endIndex++ {
-	// 	if buf._AtIndex(uint(endIndex)) == '\\' {
-	// 		endIndex++
+		intVal int64
 
-	// 	}
-	// }
+		err error
+	)
 
-	// if buf._AtIndex(uint(endIndex)) != '"' {
-	// 	return fmt.Errorf("unexpected end")
-	// }
+	for i = 0; buf._CanAccessAtIndex(uint(i)); i++ {
+		switch buf._AtIndex(uint(i)) {
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '-':
+			break
+		default:
+			goto loop_end
+		}
+	}
+loop_end:
+	if intVal, err = strconv.ParseInt(string(buf._MakeSlice(0, uint(i))), 10, 32); err != nil {
+		return fmt.Errorf("parse number err at position %d, err: %s", buf._GetOffset(), err.Error())
+	}
 
-	// if startIndex == endIndex {
+	obj.T = _ObjIntT
+	obj.Int = int(intVal)
 
-	// }
+	buf._AdvanceAt(uint(i))
 
-	// switch {
-
-	// }
+	return nil
 }
 
 func skipComment(buf *_Buffer) bool {
@@ -259,8 +331,8 @@ func skipComment(buf *_Buffer) bool {
 	return false
 }
 
-// available only number, uppercase character, lowercase character for key
-func _isAvailableForKey(char byte) bool {
+// available only number, uppercase character, lowercase character
+func isKeyCharacter(char byte) bool {
 	if (char >= 97 && char <= 122) || (char >= 65 && char <= 90) || (char >= 48 && char <= 57) {
 		return true
 	}
@@ -268,6 +340,6 @@ func _isAvailableForKey(char byte) bool {
 	return false
 }
 
-func _isNumber(char byte) bool {
+func isANumber(char byte) bool {
 	return char >= '0' && char <= '9'
 }
