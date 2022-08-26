@@ -40,6 +40,8 @@ func (s *Server) listenSigs() {
 
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 
+  <- ch
+
 	s.GracefulStop()
 }
 
