@@ -265,7 +265,7 @@ func parseStringVal(obj *_TscObj, buf *_Buffer) error {
 
 func parseNumberVal(obj *_TscObj, buf *_Buffer) error {
 	if !buf._CanAccessAtIndex(0) {
-		return fmt.Errorf("")
+		return fmt.Errorf("unexpected end")
 	}
 
 	var (
