@@ -5,7 +5,6 @@ import (
 	"context"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -55,13 +54,10 @@ func (m *MetaInfo) CurrentPage() int {
 	return (m.Offset / m.Limit) + 1
 }
 
-func FetchPage(conn *sqlx.DB, m *MetaInfo, dest interface{}, table string, conds []string, t time.Duration) error {
+func FetchPage(ctx context.Context, conn *sqlx.DB, m *MetaInfo, dest interface{}, table string, conds []string) error {
 	var (
 		filterBuf *bytes.Buffer
 		queryBuf  *bytes.Buffer
-
-		ctx    context.Context
-		cancel context.CancelFunc
 
 		filterStr string
 
@@ -97,23 +93,16 @@ func FetchPage(conn *sqlx.DB, m *MetaInfo, dest interface{}, table string, conds
 	// prepare query to fetch count of rows
 	buildQuery(queryBuf, "select count(*) as totals from", table, filterStr)
 
-	ctx, cancel = context.WithTimeout(context.Background(), t)
-
 	// exec query
 	if err = conn.QueryRowContext(ctx, queryBuf.String()).Scan(&m.Total); err != nil {
 		return err
 	}
-
-	cancel()
 
 	// reset previous query row
 	queryBuf.Reset()
 
 	// prepare query to fetch resources
 	buildQuery(queryBuf, "select * from", table, filterStr)
-
-	ctx, cancel = context.WithTimeout(context.Background(), t/2)
-	defer cancel()
 
 	if err = conn.SelectContext(ctx, dest, queryBuf.String()); err != nil {
 		return err
